@@ -516,7 +516,7 @@ def main():
     ap.add_argument('--limit', type=int, default=20, help='Limit search results')
     ap.add_argument('--json', action='store_true', help='Print JSON for search results')
     ap.add_argument('--show', help='Show indexed metadata for a source_id')
-    ap.add_argument('--select-video', help='Generate viral shorts candidates and cut exports for a source_id')
+    ap.add_argument('--select-video', help='Generate viral shorts candidates and cut exports for a source_id or file path. If the file path is not indexed yet, it is transcribed and indexed first')
     ap.add_argument('--all', action='store_true', help='Scan the whole Photos library instead of only the last configured hours')
     ap.add_argument('--max', type=str, default=None, help='Override osxphotos.max_videos_per_run for this run, e.g. --all --max 20 or --max all')
     args = ap.parse_args()
@@ -531,6 +531,24 @@ def main():
     if args.show:
         show_video(con, args.show); return
     if args.select_video:
+        selector_path = Path(args.select_video).expanduser()
+        if selector_path.exists() and selector_path.is_file() and selector_path.suffix.lower() in VIDEO_EXTS:
+            resolved_selector = selector_path.resolve()
+            sid = 'file:' + str(resolved_selector)
+            existing = con.execute(
+                "SELECT transcript_json, status FROM assets WHERE source_id=? OR exported_path=? OR original_filename=? LIMIT 1",
+                (sid, str(resolved_selector), resolved_selector.name),
+            ).fetchone()
+            if not existing or not existing[0]:
+                processed = resolve(base, cfg['paths']['processed_dir']); processed.mkdir(parents=True, exist_ok=True)
+                transcripts = resolve(base, cfg['paths']['transcripts_dir']); transcripts.mkdir(parents=True, exist_ok=True)
+                audio_dir = resolve(base, cfg['paths']['audio_dir']); audio_dir.mkdir(parents=True, exist_ok=True)
+                tx = cfg['transcription']
+                model = WhisperModel(tx.get('model', 'small'), device=tx.get('device', 'auto'), compute_type=tx.get('compute_type', 'auto'))
+                result = transcribe_file(cfg, con, sid, 'manual_file', resolved_selector, processed, audio_dir, transcripts, log_file, model)
+                if result != 'done':
+                    raise SystemExit(f"Could not prepare video for shorts: {args.select_video} status={result}")
+            rebuild_search_index(con)
         select_video(con, args.select_video, base); return
     if args.add_folder:
         add_manual_folder(cfg, base, args.add_folder); print(f"Added folder: {Path(args.add_folder).expanduser().resolve()}"); return

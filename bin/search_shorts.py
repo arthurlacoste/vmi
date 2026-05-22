@@ -371,13 +371,59 @@ def write_fcpxml(path: Path, timeline: dict):
     path.write_text(xml, encoding="utf-8")
 
 
-def select_video(con: sqlite3.Connection, source_id: str, base: Path):
+def resolve_video_selector(con: sqlite3.Connection, selector: str):
     init_search_schema(con)
-    row = con.execute("SELECT filename, source_path, transcript_json FROM videos WHERE source_id=?", (source_id,)).fetchone()
-    if not row:
-        raise SystemExit(f"Video not found in index: {source_id}. Run ./run.sh --index first.")
+    candidates = [selector]
+    selector_path = Path(selector).expanduser()
+    if selector_path.exists():
+        resolved = str(selector_path.resolve())
+        candidates.extend([resolved, f"file:{resolved}", selector_path.name])
+    else:
+        candidates.append(selector_path.name)
 
-    filename, source_path, transcript_json = row
+    def lookup():
+        for value in dict.fromkeys(candidates):
+            row = con.execute(
+                "SELECT source_id, filename, source_path, transcript_json FROM videos WHERE source_id=? OR source_path=? OR filename=? LIMIT 1",
+                (value, value, value),
+            ).fetchone()
+            if row:
+                return row
+        for value in dict.fromkeys(candidates):
+            asset = con.execute("""
+                SELECT source_id, source_kind, original_filename, exported_path, sha256, duration_seconds,
+                       transcript_json, transcript_txt, transcript_srt, status, created_at
+                FROM assets
+                WHERE source_id=? OR exported_path=? OR original_filename=?
+                LIMIT 1
+            """, (value, value, value)).fetchone()
+            if asset and asset[6]:
+                index_one_transcript(con, asset)
+                con.commit()
+                return con.execute(
+                    "SELECT source_id, filename, source_path, transcript_json FROM videos WHERE source_id=? LIMIT 1",
+                    (asset[0],),
+                ).fetchone()
+        return None
+
+    row = lookup()
+    if row:
+        return row
+    rebuild_search_index(con)
+    row = lookup()
+    if row:
+        return row
+    return None
+
+
+def select_video(con: sqlite3.Connection, selector: str, base: Path):
+    row = resolve_video_selector(con, selector)
+    if not row:
+        raise SystemExit(
+            f"Video not found in index: {selector}. Run ./run.sh --add-file {selector!r} then ./run.sh once to transcribe it, or use an existing source_id."
+        )
+
+    source_id, filename, source_path, transcript_json = row
     data = read_json(transcript_json)
     candidates = candidates_from_segments(data.get("segments", []))
     out_dir = base / "data" / "shorts" / source_id.replace("/", "_").replace(":", "_")

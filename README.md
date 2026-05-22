@@ -303,10 +303,10 @@ Inspect one indexed video:
 ./run.sh --show <source_id>
 ```
 
-Generate a shorts package for a video:
+Generate a shorts package for a video. A direct file path is accepted and auto-indexed:
 
 ```bash
-./run.sh --select-video <source_id>
+./run.sh --select-video <source_id_or_path>
 ```
 
 The shorts package is written to `data/shorts/<source_id>/` and includes:

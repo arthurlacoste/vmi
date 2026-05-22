@@ -61,8 +61,8 @@ Video details and shorts:
   ./run.sh --show <source_id>
       Show indexed paths and metadata for one video.
 
-  ./run.sh --select-video <source_id>
-      Generate viral short candidates plus JSON timeline and FCPXML cut export.
+  ./run.sh --select-video <source_id_or_path>
+      Generate viral short candidates plus JSON timeline and FCPXML cut export. Accepts a source_id or a video file path. If the file path is not indexed yet, it is transcribed and indexed first.
 
 Help:
   ./run.sh -h
