@@ -279,3 +279,42 @@ See:
 docs/PLAN_SEARCH_AND_VIRAL_SHORTS.md
 docs/SHORTS_AGENT.md
 ```
+
+## Search and viral shorts
+
+Build the local SQLite FTS index from completed transcripts:
+
+```bash
+./run.sh --index
+```
+
+Search across spoken transcript text and indexed metadata:
+
+```bash
+./run.sh --search "tattoo" --limit 20
+./run.sh --search "tattoo" --metadata
+./run.sh --search "person" --field persons
+./run.sh --search "vacances" --json
+```
+
+Inspect one indexed video:
+
+```bash
+./run.sh --show <source_id>
+```
+
+Generate a shorts package for a video:
+
+```bash
+./run.sh --select-video <source_id>
+```
+
+The shorts package is written to `data/shorts/<source_id>/` and includes:
+
+- `viral_candidates.json`
+- `viral_candidates.md`
+- `cuts.timeline.json`
+- `cuts.fcpxml`
+- `chatgpt_prompt.txt`
+
+The local heuristic selector uses transcript timestamps to propose 12 to 45 second candidates. The generated prompt file can then be opened in ChatGPT with MCP DL for editorial refinement.

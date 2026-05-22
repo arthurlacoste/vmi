@@ -38,6 +38,32 @@ Analysis:
   ./run.sh --analyze
       Show SQLite status summary and recent errors/skips from logs/results.
 
+Search and index:
+  ./run.sh --index
+      Build or update the SQLite FTS index from completed transcripts.
+
+  ./run.sh --reindex
+      Rebuild the SQLite FTS index from completed transcripts.
+
+  ./run.sh --search "tattoo" --limit 20
+      Search spoken transcript text and indexed video metadata.
+
+  ./run.sh --search "tattoo" --metadata
+      Search metadata only.
+
+  ./run.sh --search "person" --field persons
+      Search one indexed field: transcript, labels, persons, albums, keywords, place, filename or metadata.
+
+  ./run.sh --search "vacances" --json
+      Print search results as JSON.
+
+Video details and shorts:
+  ./run.sh --show <source_id>
+      Show indexed paths and metadata for one video.
+
+  ./run.sh --select-video <source_id>
+      Generate viral short candidates plus JSON timeline and FCPXML cut export.
+
 Help:
   ./run.sh -h
   ./run.sh --h

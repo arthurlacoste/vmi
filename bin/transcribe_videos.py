@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 from faster_whisper import WhisperModel
+from search_shorts import rebuild_search_index, search_videos, show_video, select_video
 
 VIDEO_EXTS = {".mov", ".mp4", ".m4v"}
 
@@ -506,11 +507,31 @@ def main():
     ap.add_argument('--add-folder')
     ap.add_argument('--add-file')
     ap.add_argument('--analyze', action='store_true')
+    ap.add_argument('--index', action='store_true', help='Build or update the SQLite FTS search index')
+    ap.add_argument('--reindex', action='store_true', help='Rebuild the SQLite FTS search index')
+    ap.add_argument('--search', help='Search in transcripts and indexed metadata')
+    ap.add_argument('--metadata', action='store_true', help='Search metadata fields only')
+    ap.add_argument('--all-fields', action='store_true', help='Search all indexed fields, default behavior')
+    ap.add_argument('--field', help='Limit search to one FTS field')
+    ap.add_argument('--limit', type=int, default=20, help='Limit search results')
+    ap.add_argument('--json', action='store_true', help='Print JSON for search results')
+    ap.add_argument('--show', help='Show indexed metadata for a source_id')
+    ap.add_argument('--select-video', help='Generate viral shorts candidates and cut exports for a source_id')
     ap.add_argument('--all', action='store_true', help='Scan the whole Photos library instead of only the last configured hours')
     ap.add_argument('--max', type=str, default=None, help='Override osxphotos.max_videos_per_run for this run, e.g. --all --max 20 or --max all')
     args = ap.parse_args()
     cfg = load_config(Path(args.config).resolve()); base = Path(cfg['paths']['project_dir']).expanduser()
     log_file = resolve(base, cfg['paths']['log_file']); con = init_db(resolve(base, cfg['paths']['state_db']))
+    if args.index or args.reindex:
+        count = rebuild_search_index(con); print(f'Indexed videos: {count}'); return
+    if args.search:
+        if args.metadata and not args.field:
+            args.field = 'metadata'
+        search_videos(con, args.search, limit=args.limit, field=args.field, json_output=args.json); return
+    if args.show:
+        show_video(con, args.show); return
+    if args.select_video:
+        select_video(con, args.select_video, base); return
     if args.add_folder:
         add_manual_folder(cfg, base, args.add_folder); print(f"Added folder: {Path(args.add_folder).expanduser().resolve()}"); return
     if args.add_file:
