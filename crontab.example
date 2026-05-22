@@ -1,0 +1,2 @@
+# Runs every hour, asks Photos only for videos created in the last 24h, and skips already seen UUIDs/hashes.
+0 * * * * cd ~/dev/vmi && ./run.sh >> data/logs/cron.log 2>&1

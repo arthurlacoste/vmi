@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local runtime data
+data/
+state/
+*.sqlite
+*.sqlite3
+*.db
+*.log
+
+# Transcription / media artifacts
+*.mov
+*.mp4
+*.m4v
+*.mp3
+*.wav
+*.m4a
+*.srt
+
+# Local config / secrets
+.env
+.env.*
+*.local
+config/*.local.yaml
+config/manual_sources.json
+
+# macOS / editors
+.DS_Store
+.AppleDouble
+.LSOverride
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
