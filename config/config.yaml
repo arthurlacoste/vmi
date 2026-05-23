@@ -29,6 +29,8 @@ transcription:
   beam_size: 5
   vad_filter: true
   formats: [srt, json]
+  local_transcription_subdir: true
+  local_transcription_subdir_name: transcription
 
 video_extensions: [.mov, .mp4, .m4v]
 min_duration_seconds: 30
