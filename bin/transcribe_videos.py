@@ -147,7 +147,6 @@ def init_db(db: Path):
     existing = con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='assets'").fetchone()
     if existing:
         cols = [r[1] for r in con.execute('PRAGMA table_info(assets)').fetchall()]
-        # Migration from the old schema: photos_uuid primary key -> source_id primary key.
         if 'source_id' not in cols and 'photos_uuid' in cols:
             con.execute('ALTER TABLE assets RENAME TO assets_old')
             con.execute("""
@@ -296,8 +295,6 @@ def osxphotos_query_recent_movies(cfg, log_file: Path, scan_all: bool = False):
     if osx.get("favorite_only"): cmd += ["--favorite"]
     p = run(cmd, log_file, check=True, capture=True)
     data = json.loads(p.stdout or "[]")
-    # Important: this is only the candidate scan cap. --max counts eligible processed videos,
-    # so short videos skipped by min_duration_seconds do not consume the --max budget.
     candidate_limit = parse_limit(osx.get("candidate_scan_limit", 200), default=None)
     if candidate_limit is None:
         return data
@@ -319,17 +316,30 @@ def srt_ts(sec: float):
     ms = int(round(sec * 1000)); h, r = divmod(ms, 3600000); m, r = divmod(r, 60000); s, ms = divmod(r, 1000)
     return f"{h:02}:{m:02}:{s:02},{ms:03}"
 
+def segment_text(segment: dict) -> str:
+    text = (segment.get("text") or "").strip()
+    speaker = segment.get("speaker")
+    return f"{speaker}: {text}" if speaker else text
+
 def write_transcripts(stem, segments, info, out_dir: Path, formats):
     out_dir.mkdir(parents=True, exist_ok=True); res = {}
     if "json" in formats:
         p = out_dir / f"{stem}.json"; p.write_text(json.dumps({"info": info, "segments": segments}, ensure_ascii=False, indent=2), encoding="utf-8"); res["transcript_json"] = str(p)
     if "txt" in formats:
-        p = out_dir / f"{stem}.txt"; p.write_text("\n".join(s["text"].strip() for s in segments).strip() + "\n", encoding="utf-8"); res["transcript_txt"] = str(p)
+        p = out_dir / f"{stem}.txt"; p.write_text("\n".join(segment_text(s) for s in segments).strip() + "\n", encoding="utf-8"); res["transcript_txt"] = str(p)
     if "srt" in formats:
         lines=[]
-        for i,s in enumerate(segments,1): lines += [str(i), f"{srt_ts(s['start'])} --> {srt_ts(s['end'])}", s["text"].strip(), ""]
+        for i,s in enumerate(segments,1): lines += [str(i), f"{srt_ts(s['start'])} --> {srt_ts(s['end'])}", segment_text(s), ""]
         p = out_dir / f"{stem}.srt"; p.write_text("\n".join(lines), encoding="utf-8"); res["transcript_srt"] = str(p)
     return res
+
+def transcription_output_dir(cfg: dict, source_kind: str, source_path: Path, fallback_dir: Path) -> Path:
+    tx = cfg.get("transcription", {})
+    local_kinds = {"manual_file", "manual_folder"}
+    if source_kind in local_kinds and tx.get("local_transcription_subdir", True):
+        subdir = tx.get("local_transcription_subdir_name", "transcription")
+        return source_path.parent / subdir
+    return fallback_dir
 
 
 
@@ -348,7 +358,6 @@ def osxphotos_duration(asset: dict | None):
                     return float(value["value"]) / float(value["timescale"])
                 except Exception:
                     return None
-            # Sometimes osxphotos nests duration one level deeper.
             if "duration" in value:
                 return as_seconds(value.get("duration"))
             return None
@@ -396,7 +405,6 @@ def compact_osxphotos_asset(asset: dict | None) -> dict:
     for key in wanted_keys:
         if key in asset and asset[key] not in (None, "", [], {}):
             out[key] = asset[key]
-    # Keep unknown osxphotos fields too, but under raw, because osxphotos evolves and may include useful ML fields.
     out["raw"] = asset
     return out
 
@@ -446,7 +454,7 @@ def transcribe_file(cfg, con, source_id, source_kind, source_path: Path, process
         extract_audio(working, wav, log_file); upsert(con, source_id, status='transcribing')
         tx = cfg['transcription']
         seg_iter, info_obj = model.transcribe(str(wav), language=tx.get('language', 'fr'), beam_size=int(tx.get('beam_size', 5)), vad_filter=bool(tx.get('vad_filter', True)))
-        segments = [{"start": float(s.start), "end": float(s.end), "text": s.text} for s in seg_iter]
+        segments = [{"start": float(s.start), "end": float(s.end), "text": s.text, "speaker": getattr(s, "speaker", None)} for s in seg_iter]
         ffmeta = ffprobe_metadata(source_path, log_file)
         exifmeta = exiftool_metadata(source_path, log_file)
         info = {
@@ -458,6 +466,10 @@ def transcribe_file(cfg, con, source_id, source_kind, source_path: Path, process
             "duration": dur,
             "requested_language": tx.get('language', 'fr'),
             "detected_language": getattr(info_obj, 'language', None),
+            "speaker_diarization": {
+                "available": any(segment.get("speaker") for segment in segments),
+                "field": "segments[].speaker",
+            },
             "transcribed_at": iso(),
             "metadata_summary": {
                 **metadata_summary(exifmeta, ffmeta),
@@ -469,7 +481,8 @@ def transcribe_file(cfg, con, source_id, source_kind, source_path: Path, process
                 "ffprobe": ffmeta,
             },
         }
-        outputs = write_transcripts(stem, segments, info, transcripts, tx.get('formats', ['txt','srt','json']))
+        out_dir = transcription_output_dir(cfg, source_kind, source_path, transcripts)
+        outputs = write_transcripts(stem, segments, info, out_dir, tx.get('formats', ['srt','json']))
         upsert(con, source_id, status='done', error=None, **outputs)
         storage = cfg.get('storage', {})
         if storage.get('delete_audio_after_transcription', True) and wav: wav.unlink(missing_ok=True)
