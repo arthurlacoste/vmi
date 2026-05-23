@@ -10,11 +10,14 @@ The project is designed to become a searchable local video memory: transcripts, 
 - Can scan the whole Photos database with `--all`
 - Exports videos by Photos UUID and avoids duplicates
 - Supports manual folders and manual video files
+- Recalls already scanned videos directly with `--recall`
+- Stores local manual transcriptions in a `transcription/` folder next to the source video
 - Skips videos shorter than `min_duration_seconds`, default: 30 seconds
 - Skips videos without an audio stream
 - Uses `osxphotos` duration metadata to skip short iCloud videos before export/download when available
 - Transcribes with Whisper, forced language: French (`fr`)
-- Stores transcripts as JSON, TXT, and SRT
+- Stores transcripts as JSON and SRT by default
+- Keeps JSON as the structured source of truth for metadata, segments, timestamps, and future speaker labels
 - Enriches JSON with `ffprobe` metadata
 - Enriches JSON with `exiftool` metadata when available
 - Stores Apple Photos metadata when available: people, albums, keywords, labels, places, favorites, and other fields exposed by `osxphotos`
@@ -96,6 +99,12 @@ Analyze local status and recent errors/skips:
 ./run.sh --analyze
 ```
 
+Recall a previously scanned video without a complex search:
+
+```bash
+./run.sh --recall <source_id_or_path_or_filename_or_sha256>
+```
+
 Show help:
 
 ```bash
@@ -144,10 +153,10 @@ osxphotos export data/incoming --uuid <UUID> --movie --download-missing --update
 
 Duplicates are avoided in SQLite with:
 
-- `photos_uuid` as the primary key
+- `source_id` as the primary key
 - `sha256` as a unique index after export
 
-After a successful transcription, local video and audio files are deleted by default. Only transcripts and metadata remain.
+After a successful transcription, local video and audio files are deleted by default for iCloud exports. Only transcripts and metadata remain.
 
 ## Full library scan
 
@@ -202,7 +211,9 @@ transcription:
   language: fr
   beam_size: 5
   vad_filter: true
-  formats: [txt, srt, json]
+  formats: [srt, json]
+  local_transcription_subdir: true
+  local_transcription_subdir_name: transcription
 
 min_duration_seconds: 30
 ```
@@ -210,12 +221,13 @@ min_duration_seconds: 30
 ## Output directories
 
 ```text
-data/incoming      exported videos
-data/processed     working copies
-data/audio         extracted audio
-data/transcripts   JSON, TXT, and SRT transcripts
-data/logs          run and cron logs
-state/             SQLite state
+data/incoming                     exported iCloud videos
+data/processed                    working copies
+data/audio                        extracted audio
+data/transcripts                  default JSON and SRT transcripts
+/path/to/video/transcription      JSON and SRT transcripts for manual videos
+data/logs                         run and cron logs
+state/                            SQLite state
 ```
 
 Runtime data is ignored by Git.
@@ -233,9 +245,73 @@ Depending on what Photos has indexed, this can include people, albums, keywords,
 The JSON can also include:
 
 - Whisper segments and timestamps
+- optional speaker labels in `segments[].speaker`
 - `ffprobe` metadata
 - `exiftool` metadata, if available
 - normalized metadata summaries
+
+## Testing
+
+There are two test pipelines because the full product is macOS-only, while GitHub-hosted Linux runners can still validate the portable parts.
+
+### Portable GitHub Actions pipeline
+
+The portable CI is defined in:
+
+```text
+.github/workflows/portable-ci.yml
+```
+
+It runs on Ubuntu and covers:
+
+- Python syntax compilation for `bin/` and `tests/`
+- import safety with a mocked `faster_whisper` module
+- SQLite recall lookup logic
+- local transcription folder selection
+- JSON/SRT transcript writing behavior
+- absolute `file://` URL generation for ChatGPT prompts
+
+It intentionally does not cover:
+
+- Apple Photos access
+- `osxphotos` runtime behavior
+- real ffmpeg audio extraction
+- real Whisper transcription
+- macOS app launching
+
+Run the same portable tests locally with:
+
+```bash
+python -m unittest discover -s tests -p 'test_*.py'
+```
+
+### Full macOS pipeline
+
+The full validation script is:
+
+```text
+scripts/test_macos_full.sh
+```
+
+Run it on macOS with a real local video containing audio:
+
+```bash
+scripts/test_macos_full.sh --video /absolute/path/to/video.mov
+```
+
+It checks:
+
+- macOS runtime
+- `ffmpeg`, `ffprobe`, and `osxphotos`
+- optional `exiftool`
+- portable unit tests
+- manual file registration
+- transcription of the provided video
+- `--recall` lookup
+- search index rebuild
+- shorts package generation
+- `chatgpt_prompt.txt` and `chatgpt_url.txt`
+- local `transcription/` output folder with JSON and SRT files
 
 ## Cron example
 
@@ -316,5 +392,6 @@ The shorts package is written to `data/shorts/<source_id>/` and includes:
 - `cuts.timeline.json`
 - `cuts.fcpxml`
 - `chatgpt_prompt.txt`
+- `chatgpt_url.txt`
 
-The local heuristic selector uses transcript timestamps to propose 12 to 45 second candidates. The generated prompt file can then be opened in ChatGPT with MCP DL for editorial refinement.
+The local heuristic selector uses transcript timestamps to propose 12 to 45 second candidates. The generated prompt URL can then be opened in ChatGPT with MCP DL for editorial refinement.
