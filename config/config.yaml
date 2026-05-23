@@ -28,7 +28,7 @@ transcription:
   language: fr
   beam_size: 5
   vad_filter: true
-  formats: [txt, srt, json]
+  formats: [srt, json]
 
 video_extensions: [.mov, .mp4, .m4v]
 min_duration_seconds: 30
