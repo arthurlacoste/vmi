@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from urllib.parse import quote
 
 
 def json_dumps(data):
@@ -25,6 +26,16 @@ def flatten_text(value) -> str:
 
 def read_json(path: str | Path) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def file_url(value: str | Path | None) -> str:
+    if not value:
+        return ""
+    path = Path(value).expanduser()
+    try:
+        return path.resolve().as_uri()
+    except Exception:
+        return str(path)
 
 
 def init_search_schema(con: sqlite3.Connection):
@@ -341,7 +352,7 @@ def write_fcpxml(path: Path, timeline: dict):
     clips = timeline["clips"]
     total = sum(float(clip["source_end"]) - float(clip["source_start"]) for clip in clips) or 1
     source_video = timeline.get("source_video") or ""
-    resource = f'<asset id="r1" name="{fcpxml_escape(Path(source_video or "source").name)}" src="file://{fcpxml_escape(source_video)}" hasVideo="1" />'
+    resource = f'<asset id="r1" name="{fcpxml_escape(Path(source_video or "source").name)}" src="{fcpxml_escape(file_url(source_video))}" hasVideo="1" />'
     clip_lines = []
     offset = 0.0
     for clip in clips:
@@ -451,7 +462,21 @@ def select_video(con: sqlite3.Connection, selector: str, base: Path):
     (out_dir / "cuts.timeline.json").write_text(json_dumps(timeline), encoding="utf-8")
     write_fcpxml(out_dir / "cuts.fcpxml", timeline["timeline"])
 
-    prompt = f"Utilise MCP DL. Lis docs/SHORTS_AGENT.md, puis vérifie et améliore les candidats dans {out_dir}. Transcription: {transcript_json}. Vidéo source: {source_path}."
+    docs_url = file_url(base / "docs" / "SHORTS_AGENT.md")
+    out_dir_url = file_url(out_dir)
+    transcript_url = file_url(transcript_json)
+    source_url = file_url(source_path)
+    prompt = (
+        "Utilise MCP DL. "
+        f"Lis la documentation agent: {docs_url}. "
+        f"Vérifie et améliore les candidats dans ce dossier: {out_dir_url}. "
+        f"Transcription JSON: {transcript_url}. "
+        f"Vidéo source: {source_url}. "
+        "Les chemins ci-dessus sont des URL absolues pour éviter toute résolution manuelle."
+    )
+    chatgpt_url = f"https://chatgpt.com/?prompt={quote(prompt)}"
     (out_dir / "chatgpt_prompt.txt").write_text(prompt, encoding="utf-8")
+    (out_dir / "chatgpt_url.txt").write_text(chatgpt_url + "\n", encoding="utf-8")
     print(f"Shorts package written: {out_dir}")
     print(f"Prompt file: {out_dir / 'chatgpt_prompt.txt'}")
+    print(f"ChatGPT URL file: {out_dir / 'chatgpt_url.txt'}")

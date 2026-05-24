@@ -38,6 +38,11 @@ Analysis:
   ./run.sh --analyze
       Show SQLite status summary and recent errors/skips from logs/results.
 
+Recall:
+  ./run.sh --recall <source_id_or_path_or_filename_or_sha256>
+      Recall an already scanned video directly from SQLite without re-downloading,
+      re-scanning, or running a complex transcript search.
+
 Search and index:
   ./run.sh --index
       Build or update the SQLite FTS index from completed transcripts.
@@ -77,7 +82,8 @@ Current behavior:
   - --max counts eligible transcribed videos, not short skipped candidates
   - forces Whisper language to French, language: fr
   - avoids duplicates with Photos UUID and SHA256
-  - stores transcripts as JSON, TXT and SRT
+  - stores transcripts as JSON and SRT by default
+  - JSON is kept as the structured source of truth for metadata, segments, timestamps and future speaker labels
   - enriches JSON with ffprobe metadata and exiftool metadata when available
   - stores osxphotos metadata when available: people, albums, keywords, labels, places
   - deletes temporary iCloud video/audio files after successful transcription by default
@@ -101,6 +107,8 @@ Examples:
   ./run.sh --all --max 20
   ./run.sh --max 5
   ./run.sh --analyze
+  ./run.sh --recall file:/Volumes/SSD/Videos/video.mov
+  ./run.sh --recall <sha256>
   ./run.sh --add-folder /Volumes/SSD/Videos
   ./run.sh --add-file ~/Desktop/video.mov
 
@@ -124,4 +132,13 @@ if [ ! -f .venv/bin/activate ]; then
 fi
 
 . .venv/bin/activate
+if [ "${1:-}" = "--recall" ]; then
+  if [ -z "${2:-}" ]; then
+    echo "Usage: ./run.sh --recall <source_id_or_path_or_filename_or_sha256>" >&2
+    exit 2
+  fi
+  python bin/recall_video.py --config config/config.yaml "$2"
+  exit 0
+fi
+
 python bin/transcribe_videos.py --config config/config.yaml "$@"
